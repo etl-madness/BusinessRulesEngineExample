@@ -25,7 +25,7 @@ public class SqlDatabaseService : IBusinessRuleStore
 
     public SqlDatabaseService(IConfiguration configuration, IEncryptionService encryptionService)
     {
-        _connectionString = configuration.GetConnectionString("DefaultConnection") 
+        _connectionString = configuration.GetConnectionString("DefaultConnection")
             ?? Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
         _encryptionService = encryptionService;

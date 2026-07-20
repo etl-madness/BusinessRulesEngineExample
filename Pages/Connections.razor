@@ -1,0 +1,140 @@
+@page "/connections"
+@using BusinessRulesEngineExample.Models
+@using BusinessRulesEngineExample.Services
+@using EtlAnalytics.RulesEngine.Models
+@inject SqlDatabaseService DbService
+@inject NotificationService NotificationService
+@inject DialogService DialogService
+
+<PageTitle>Database Connections</PageTitle>
+
+<div style="display: flex; height: calc(100vh - 120px); border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; overflow: hidden;">
+    <!-- Sidebar -->
+    <div style="width: 300px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; background: #f8fafc;">
+        <div style="padding: 1rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #ffffff;">
+            <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 700; margin: 0; color: #0f172a;">Connections</RadzenText>
+            <div style="display: flex; gap: 0.5rem;">
+                <RadzenButton Icon="refresh" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="LoadConnectionsAsync" Tooltip="Refresh List" />
+                <RadzenButton Icon="add" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small" Click="CreateNewConnection" Tooltip="Create New Connection" />
+            </div>
+        </div>
+        <div style="flex-grow: 1; overflow-y: auto; padding: 0.5rem;">
+            @foreach (var conn in connections)
+            {
+                <div @onclick="() => SelectConnection(conn)" 
+                     style="padding: 0.75rem 1rem; margin-bottom: 0.25rem; border-radius: 6px; cursor: pointer; transition: all 0.2s; 
+                            background: @(selectedConnection?.Id == conn.Id ? "#eff6ff" : "transparent");
+                            border: 1px solid @(selectedConnection?.Id == conn.Id ? "#bfdbfe" : "transparent");">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <span style="font-weight: 600; color: #1e293b; font-size: 0.9rem;">@conn.Name</span>
+                        <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="@conn.ProviderType" />
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div style="flex-grow: 1; display: flex; flex-direction: column; background: #ffffff;">
+        @if (selectedConnection == null)
+        {
+            <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #94a3b8;">
+                <RadzenText TextStyle="TextStyle.H6">Select a connection to edit</RadzenText>
+            </div>
+        }
+        else
+        {
+            <div style="padding: 1rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between;">
+                <RadzenText TextStyle="TextStyle.H6">@selectedConnection.Name</RadzenText>
+                <div style="display: flex; gap: 0.5rem;">
+                    <RadzenButton Text="Save" Icon="save" ButtonStyle="ButtonStyle.Primary" Click="SaveCurrentConnection" />
+                    <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Click="() => ConfirmDeleteAsync(selectedConnection)" />
+                </div>
+            </div>
+            <div style="flex-grow: 1; padding: 1rem; overflow-y: auto;">
+                <RadzenRow Gap="1rem">
+                    <RadzenColumn Size="6">
+                        <RadzenText TextStyle="TextStyle.Subtitle2">Connection Name</RadzenText>
+                        <RadzenTextBox @bind-Value="selectedConnection.Name" Style="width: 100%;" />
+                    </RadzenColumn>
+                    <RadzenColumn Size="6">
+                        <RadzenText TextStyle="TextStyle.Subtitle2">Provider Type</RadzenText>
+                        <RadzenDropDown @bind-Value="selectedConnection.ProviderType" Data="@providerTypes" Style="width: 100%;" />
+                    </RadzenColumn>
+                </RadzenRow>
+                <div style="margin-top: 1rem;">
+                    <RadzenText TextStyle="TextStyle.Subtitle2">Connection String</RadzenText>
+                    <RadzenTextArea @bind-Value="selectedConnection.ConnectionString" Style="width: 100%; min-height: 100px; font-family: Consolas, monospace;" />
+                    <RadzenAlert AlertStyle="AlertStyle.Info" ShowIcon="true" Variant="Variant.Flat" Shade="Shade.Lighter" Style="margin-top: 1rem;">
+                        The connection string will be encrypted when saved.
+                    </RadzenAlert>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<DbConnectionDefinition> connections = new();
+    private DbConnectionDefinition? selectedConnection;
+    private List<string> providerTypes = new() { "SqlServer", "PostgreSQL", "MySQL", "SQLite" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConnectionsAsync();
+    }
+
+    private async Task LoadConnectionsAsync()
+    {
+        connections = (await DbService.GetAllDbConnectionsAsync()).ToList();
+    }
+
+    private void SelectConnection(DbConnectionDefinition conn)
+    {
+        selectedConnection = conn;
+    }
+
+    private void CreateNewConnection()
+    {
+        selectedConnection = new DbConnectionDefinition { Name = "New Connection", ProviderType = "SqlServer", ConnectionString = "" };
+    }
+
+    private async Task SaveCurrentConnection()
+    {
+        if (selectedConnection == null) return;
+        
+        try 
+        {
+            if (selectedConnection.Id == 0)
+                await DbService.InsertDbConnectionAsync(selectedConnection);
+            else
+                await DbService.UpdateDbConnectionAsync(selectedConnection);
+            
+            await LoadConnectionsAsync();
+            NotificationService.Notify(NotificationSeverity.Success, "Saved", "Connection saved successfully.");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Notify(NotificationSeverity.Error, "Error", $"Failed to save connection: {ex.Message}");
+        }
+    }
+
+    private async Task ConfirmDeleteAsync(DbConnectionDefinition conn)
+    {
+        var confirm = await DialogService.Confirm("Delete this connection?", "Confirm Delete");
+        if (confirm == true)
+        {
+            try 
+            {
+                await DbService.DeleteDbConnectionAsync(conn.Id);
+                selectedConnection = null;
+                await LoadConnectionsAsync();
+                NotificationService.Notify(NotificationSeverity.Success, "Deleted", "Connection deleted successfully.");
+            }
+            catch (Exception ex)
+            {
+                NotificationService.Notify(NotificationSeverity.Error, "Error", ex.Message);
+            }
+        }
+    }
+}

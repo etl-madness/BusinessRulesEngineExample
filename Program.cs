@@ -12,6 +12,11 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+
 
 // Radzen Services
 builder.Services.AddScoped<DialogService>();
@@ -34,11 +39,20 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error");
 }
 
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
 app.UseStaticFiles();
+
 
 app.UseRouting();
 
 app.MapBlazorHub();
+app.MapControllers();
+
 app.MapFallbackToPage("/_Host");
 
 // Initialize database tables
