@@ -1,4 +1,7 @@
 @page "/"
+@using System.Net.Http.Json
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager NavigationManager
 
 <PageTitle>Index</PageTitle>
 
@@ -6,10 +9,83 @@
 
 Example Business Rules Engine implementation using Blazor WebAssembly and .NET 8.0.
 
+<div class="mt-4" style="max-width: 460px;">
+    <RadzenCard Style="border: 1px solid #e2e8f0; border-radius: 8px;">
+        <RadzenStack Gap="0.75rem">
+            <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 700;">Daily Vulnerability Scan</RadzenText>
+            <RadzenText TextStyle="TextStyle.Body1">
+                Vulnerabilities: <strong>@(vulnerabilityCount.HasValue ? vulnerabilityCount.Value : 0)</strong>
+            </RadzenText>
+
+            @if (!string.IsNullOrWhiteSpace(lastUpdatedText))
+            {
+                <RadzenText TextStyle="TextStyle.Caption" Style="color: #64748b;">@lastUpdatedText</RadzenText>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Danger">@errorMessage</RadzenAlert>
+            }
+
+            <RadzenButton Text="Update" Icon="refresh" ButtonStyle="ButtonStyle.Primary" Click="RunDailyVulnerabilityScanAsync" IsBusy="@isUpdating" />
+        </RadzenStack>
+    </RadzenCard>
+</div>
+
 <div class="mt-4">
     <a href="/swagger" target="_blank" class="btn btn-primary">
         <i class="bi bi-file-earmark-code"></i> API Documentation (Swagger)
     </a>
 </div>
 
-<SurveyPrompt Title="How is Blazor working for you?" />
+@code {
+    private const string BundleName = "Daily Vulnerability Scan";
+    private int? vulnerabilityCount;
+    private bool isUpdating;
+    private string? errorMessage;
+    private string? lastUpdatedText;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RunDailyVulnerabilityScanAsync();
+    }
+
+    private async Task RunDailyVulnerabilityScanAsync()
+    {
+        isUpdating = true;
+        errorMessage = null;
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient();
+            var endpoint = NavigationManager.ToAbsoluteUri($"/api/rules/bundle/execute?name={Uri.EscapeDataString(BundleName)}");
+            using var response = await client.PostAsync(endpoint, null);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var apiError = await response.Content.ReadAsStringAsync();
+                errorMessage = string.IsNullOrWhiteSpace(apiError)
+                    ? "Failed to run scan."
+                    : apiError;
+                return;
+            }
+
+            var payload = await response.Content.ReadFromJsonAsync<BundleExecutionResponse>();
+            vulnerabilityCount = payload?.VulnerabilityCount ?? 0;
+            lastUpdatedText = $"Last updated: {DateTime.Now:G}";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isUpdating = false;
+        }
+    }
+
+    private sealed class BundleExecutionResponse
+    {
+        public int VulnerabilityCount { get; set; }
+    }
+}
