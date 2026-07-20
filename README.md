@@ -1,6 +1,6 @@
 # BusinessRulesEngineExample
 
-A Blazor Server application demonstrating the usage of `EtlAnalytics.RulesEngine` for managing and executing TSQL and C# business rules, specifically refactored for KVE (Known Vulnerability Exploitation) reporting.
+A Blazor Server application demonstrating the usage of `NuGet` `EtlAnalytics.RulesEngine.10.0.02` for managing and executing TSQL and C# business rules, specifically refactored for KVE (Known Vulnerability Exploitation) reporting.
 
 ## Database Schema
 
