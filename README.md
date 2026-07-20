@@ -1,12 +1,26 @@
 # BusinessRulesEngineExample
 
-A Blazor Server application demonstrating the usage of `NuGet` `EtlAnalytics.RulesEngine.10.0.02` for managing and executing TSQL and C# business rules, specifically refactored for KVE (Known Vulnerability Exploitation) reporting.
+A Blazor Server application demonstrating the usage of `NuGet` `EtlAnalytics.RulesEngine.1.0.0.2` for managing and executing TSQL and C# business rules, specifically refactored for KVE (Known Vulnerability Exploitation) reporting.
+This demo includes a Rules Editor, Rule Bundles Editor, Connection Editor, and API. Optionally you can add the example simple KVE/CVE reporting data schema.
+
+![Home](images/Home.png)
+![Rules C#](images/Rules_CSHARP.png)
+![Rules TSQL Execute](images/Rules_SQL_Execute.png)
+![Bundle Execution](images/BundleExecution.png)
+![DB Connections](images/DB_Connections.png)
+![Swagger](images/Swagger.png)
 
 ## Database Schema
 
 The following TSQL script sets up the necessary tables for both the Rules Engine infrastructure and the KVE/CVE reporting data.
 
-### 1. Rules Engine Infrastructure
+### 1. Setup Instructions
+- Set appropriate connection string in `appsettings.json` or `Properties/launchSettings.json`, or Define via Environment Variable `DB_CONNECTION_STRING`.
+This connection string should point to a database where the schema will be created. Default configuration uses `SQL Server` for development.
+- Configure the database by running the provided TSQL script to create the necessary tables for rules management. See Step 2.
+- If you want to seed the database with example KVE/CVE data, run `3. KVE Reporting Data Schema` and `4. Example Data (Seed)`.
+
+### 2. Rules Engine Infrastructure
 These tables are used by the `EtlAnalytics.RulesEngine` package and the `SqlDatabaseService` to manage rules, versions, and bundles.
 
 ```sql
@@ -68,7 +82,7 @@ CREATE TABLE dbo.BusinessRuleBundleItems (
 );
 ```
 
-### 2. KVE Reporting Data Schema
+### 3. KVE Reporting Data Schema (optional)
 These tables store the actual vulnerability data processed by the rules.
 
 ```sql
@@ -92,7 +106,7 @@ CREATE TABLE dbo.KveCves (
 );
 ```
 
-## Example Data (Seed)
+## 4. Example Data (Seed) (optional)
 
 Use these statements to populate the database with initial KVE/CVE data for testing.
 
