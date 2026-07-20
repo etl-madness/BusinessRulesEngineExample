@@ -1,0 +1,132 @@
+@page "/rules"
+@using BusinessRulesEngineExample.Models
+@using BusinessRulesEngineExample.Services
+@using System.Text.Json
+@using System.Text.Encodings.Web
+@inject SqlDatabaseService DbService
+@inject BusinessRuleEngine<BusinessRuleContext> Engine
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Business Rules</PageTitle>
+
+<div style="display: flex; height: calc(100vh - 120px); border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; overflow: hidden;">
+    <!-- Sidebar -->
+    <div style="width: 300px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; background: #f8fafc;">
+        <div style="padding: 1rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #ffffff;">
+            <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 700; margin: 0; color: #0f172a;">Rules</RadzenText>
+            <div style="display: flex; gap: 0.5rem;">
+                <RadzenButton Icon="refresh" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="LoadRulesAsync" Tooltip="Refresh List" />
+                <RadzenButton Icon="add" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small" Click="CreateNewRule" Tooltip="Create New Rule" />
+            </div>
+        </div>
+        <div style="flex-grow: 1; overflow-y: auto; padding: 0.5rem;">
+            @foreach (var rule in rules)
+            {
+                <div @onclick="() => SelectRule(rule)" 
+                     style="padding: 0.75rem 1rem; margin-bottom: 0.25rem; border-radius: 6px; cursor: pointer; transition: all 0.2s; 
+                            background: @(selectedRule?.Id == rule.Id ? "#eff6ff" : "transparent");
+                            border: 1px solid @(selectedRule?.Id == rule.Id ? "#bfdbfe" : "transparent");">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <span style="font-weight: 600; color: #1e293b; font-size: 0.9rem;">@rule.Name</span>
+                        <RadzenBadge BadgeStyle="@(rule.RuleType == RuleType.TSQL ? BadgeStyle.Info : BadgeStyle.Warning)" Text="@rule.RuleType.ToString()" />
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div style="flex-grow: 1; display: flex; flex-direction: column; background: #ffffff;">
+        @if (selectedRule == null)
+        {
+            <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #94a3b8;">
+                <RadzenText TextStyle="TextStyle.H6">Select a rule to edit</RadzenText>
+            </div>
+        }
+        else
+        {
+            <div style="padding: 1rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between;">
+                <RadzenText TextStyle="TextStyle.H6">@selectedRule.Name</RadzenText>
+                <div style="display: flex; gap: 0.5rem;">
+                    <RadzenButton Text="Run" Icon="play_arrow" ButtonStyle="ButtonStyle.Success" Click="RunRule" />
+                    <RadzenButton Text="Save" Icon="save" ButtonStyle="ButtonStyle.Primary" Click="SaveCurrentRule" />
+                    <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Click="() => ConfirmDeleteAsync(selectedRule)" />
+                </div>
+            </div>
+            <div style="flex-grow: 1; padding: 1rem; overflow-y: auto;">
+                 <RadzenRow Gap="1rem">
+                    <RadzenColumn Size="6">
+                        <RadzenText TextStyle="TextStyle.Subtitle2">Rule Name</RadzenText>
+                        <RadzenTextBox @bind-Value="selectedRule.Name" Style="width: 100%;" />
+                    </RadzenColumn>
+                    <RadzenColumn Size="6">
+                        <RadzenText TextStyle="TextStyle.Subtitle2">Type</RadzenText>
+                        <RadzenDropDown @bind-Value="selectedRule.RuleType" Data="@ruleTypes" Style="width: 100%;" />
+                    </RadzenColumn>
+                </RadzenRow>
+                <div style="margin-top: 1rem; height: 400px; display: flex; flex-direction: column;">
+                    <RadzenText TextStyle="TextStyle.Subtitle2">Code</RadzenText>
+                    <RadzenTextArea @bind-Value="selectedRule.Code" Style="flex-grow: 1; font-family: Consolas, monospace; background: #0f172a; color: #f8fafc;" />
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<BusinessRule> rules = new();
+    private BusinessRule? selectedRule;
+    private List<RuleType> ruleTypes = Enum.GetValues<RuleType>().ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRulesAsync();
+    }
+
+    private async Task LoadRulesAsync()
+    {
+        rules = (await DbService.GetBusinessRulesAsync()).ToList();
+    }
+
+    private void SelectRule(BusinessRule rule)
+    {
+        selectedRule = rule;
+    }
+
+    private void CreateNewRule()
+    {
+        selectedRule = new BusinessRule { Name = "New Rule", RuleType = RuleType.TSQL, Code = "" };
+    }
+
+    private async Task SaveCurrentRule()
+    {
+        if (selectedRule == null) return;
+        if (selectedRule.Id == 0)
+            await DbService.InsertBusinessRuleAsync(selectedRule);
+        else
+            await DbService.UpdateBusinessRuleAsync(selectedRule);
+        
+        await LoadRulesAsync();
+        NotificationService.Notify(NotificationSeverity.Success, "Saved", "Rule saved successfully.");
+    }
+
+    private async Task RunRule()
+    {
+        if (selectedRule == null) return;
+        await DialogService.OpenAsync<BusinessRuleRunner>($"Run Rule: {selectedRule.Name}", 
+            new Dictionary<string, object> { { "Rule", selectedRule } });
+    }
+
+    private async Task ConfirmDeleteAsync(BusinessRule rule)
+    {
+        var confirm = await DialogService.Confirm("Delete this rule?", "Confirm Delete");
+        if (confirm == true)
+        {
+            await DbService.DeleteBusinessRuleAsync(rule.Id);
+            selectedRule = null;
+            await LoadRulesAsync();
+        }
+    }
+}

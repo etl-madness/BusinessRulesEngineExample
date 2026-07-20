@@ -1,0 +1,215 @@
+@page "/bundles"
+@using BusinessRulesEngineExample.Models
+@using BusinessRulesEngineExample.Services
+@using System.Text.Json
+@using System.Text.Encodings.Web
+@inject SqlDatabaseService DbService
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+@inject BusinessRuleEngine<BusinessRuleContext> Engine
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Rule Bundles</PageTitle>
+
+<div style="display: flex; height: calc(100vh - 120px); border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; overflow: hidden;">
+    <!-- Sidebar -->
+    <div style="width: 300px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; background: #f8fafc;">
+        <div style="padding: 1rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #ffffff;">
+            <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 700; margin: 0; color: #0f172a;">Bundles</RadzenText>
+            <div style="display: flex; gap: 0.5rem;">
+                <RadzenButton Icon="refresh" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="LoadBundlesAsync" />
+                <RadzenButton Icon="add" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small" Click="CreateNewBundle" />
+            </div>
+        </div>
+        <div style="flex-grow: 1; overflow-y: auto; padding: 0.5rem;">
+            @foreach (var bundle in bundles)
+            {
+                <div @onclick="() => SelectBundle(bundle.Id)" 
+                     style="padding: 0.75rem 1rem; margin-bottom: 0.25rem; border-radius: 6px; cursor: pointer; transition: all 0.2s; 
+                            background: @(selectedBundle?.Id == bundle.Id ? "#eff6ff" : "transparent");
+                            border: 1px solid @(selectedBundle?.Id == bundle.Id ? "#bfdbfe" : "transparent");">
+                    <span style="font-weight: 600; color: #1e293b; font-size: 0.9rem;">@bundle.Name</span>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div style="flex-grow: 1; display: flex; flex-direction: column; background: #ffffff;">
+        @if (selectedBundle == null)
+        {
+            <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #94a3b8;">
+                <RadzenText TextStyle="TextStyle.H6">Select a bundle to edit</RadzenText>
+            </div>
+        }
+        else
+        {
+            <div style="padding: 1rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between;">
+                <RadzenText TextStyle="TextStyle.H6">@selectedBundle.Name</RadzenText>
+                <div style="display: flex; gap: 0.5rem;">
+                    <RadzenButton Text="Run" Icon="play_arrow" ButtonStyle="ButtonStyle.Success" Click="RunBundle" IsBusy="@isRunning" />
+                    <RadzenButton Text="Save" Icon="save" ButtonStyle="ButtonStyle.Primary" Click="SaveCurrentBundle" />
+                    <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Click="() => ConfirmDeleteAsync(selectedBundle)" />
+                </div>
+            </div>
+            <div style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
+                <div style="flex-grow: 1; padding: 1rem; overflow-y: auto;">
+                    <RadzenRow Gap="1rem">
+                        <RadzenColumn Size="12">
+                            <RadzenText TextStyle="TextStyle.Subtitle2">Bundle Name</RadzenText>
+                            <RadzenTextBox @bind-Value="selectedBundle.Name" Style="width: 100%;" />
+                        </RadzenColumn>
+                    </RadzenRow>
+
+                    <div style="margin-top: 1.5rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <RadzenText TextStyle="TextStyle.Subtitle2" Style="margin: 0;">Execution Sequence</RadzenText>
+                            <RadzenButton Text="Add Rule" Icon="add" Size="ButtonSize.ExtraSmall" Click="AddRuleToSequence" />
+                        </div>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            @foreach (var item in selectedBundle.Items.OrderBy(i => i.SequenceOrder))
+                            {
+                                <div style="display: flex; align-items: center; gap: 1rem; background: #f8fafc; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 6px;">
+                                    <div style="width: 24px; font-weight: bold;">@item.SequenceOrder</div>
+                                    <div style="flex-grow: 1;">
+                                        <RadzenDropDown TValue="int" Data="@allRules" TextProperty="Name" ValueProperty="Id" @bind-Value="item.RuleId" Style="width: 100%;" />
+                                    </div>
+                                    <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.ExtraSmall" Click="() => RemoveItem(item)" />
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Watch Panel -->
+                <div style="height: 250px; border-top: 1px solid #e2e8f0; background: #0b1220; color: #e2e8f0; display: flex; flex-direction: column;">
+                    <div style="padding: 0.5rem 1rem; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center;">
+                        <RadzenText TextStyle="TextStyle.Caption" Style="color: #94a3b8; font-weight: 700; text-transform: uppercase;">Sequence Watch</RadzenText>
+                        <RadzenButton Icon="clear_all" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.ExtraSmall" Click="() => logs.Clear()" Variant="Variant.Text" />
+                    </div>
+                    <div style="flex-grow: 1; display: flex; overflow: hidden;">
+                        <div id="bundle-ide-log" style="flex: 1; padding: 0.75rem; overflow-y: auto; font-family: Consolas, monospace; font-size: 0.8rem; border-right: 1px solid #1e293b;">
+                            @foreach (var log in logs)
+                            {
+                                <div style="margin-bottom: 0.15rem;">@log</div>
+                            }
+                        </div>
+                        <div style="width: 350px; padding: 0.75rem; overflow-y: auto; background: #0f172a;">
+                            <RadzenText TextStyle="TextStyle.Caption" Style="color: #64748b; font-weight: 700; margin-bottom: 0.5rem; display: block;">Final Result Preview</RadzenText>
+                            @if (finalResult != null)
+                            {
+                                <pre style="font-size: 0.75rem; color: #38bdf8; margin: 0; white-space: pre-wrap;">@JsonSerializer.Serialize(finalResult, new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping })</pre>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<BusinessRuleBundle> bundles = new();
+    private List<BusinessRule> allRules = new();
+    private BusinessRuleBundle? selectedBundle;
+    private List<string> logs = new();
+    private object? finalResult;
+    private bool isRunning;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBundlesAsync();
+        allRules = (await DbService.GetBusinessRulesAsync()).ToList();
+    }
+
+    private async Task LoadBundlesAsync()
+    {
+        bundles = (await DbService.GetBusinessRuleBundlesAsync()).ToList();
+    }
+
+    private async Task SelectBundle(int id)
+    {
+        selectedBundle = await DbService.GetBusinessRuleBundleByIdAsync(id);
+        finalResult = null;
+        logs.Clear();
+    }
+
+    private void CreateNewBundle()
+    {
+        selectedBundle = new BusinessRuleBundle { Name = "New Bundle" };
+        finalResult = null;
+        logs.Clear();
+    }
+
+    private void AddRuleToSequence()
+    {
+        if (selectedBundle == null) return;
+        var nextOrder = selectedBundle.Items.Any() ? selectedBundle.Items.Max(i => i.SequenceOrder) + 1 : 1;
+        selectedBundle.Items.Add(new BusinessRuleBundleItem { SequenceOrder = nextOrder });
+    }
+
+    private void RemoveItem(BusinessRuleBundleItem item)
+    {
+        selectedBundle?.Items.Remove(item);
+    }
+
+    private async Task SaveCurrentBundle()
+    {
+        if (selectedBundle == null) return;
+        if (selectedBundle.Id == 0)
+            await DbService.InsertBusinessRuleBundleAsync(selectedBundle);
+        else
+            await DbService.UpdateBusinessRuleBundleAsync(selectedBundle);
+        
+        await LoadBundlesAsync();
+        NotificationService.Notify(NotificationSeverity.Success, "Saved", "Bundle saved successfully.");
+    }
+
+    private async Task RunBundle()
+    {
+        if (selectedBundle == null || !selectedBundle.Items.Any()) return;
+
+        isRunning = true;
+        finalResult = null;
+        logs.Clear();
+        StateHasChanged();
+
+        try
+        {
+            var baseContext = new BusinessRuleContext
+            {
+                Log = line => {
+                     _ = InvokeAsync(() => {
+                        logs.Add($"[{DateTime.Now:HH:mm:ss}] {line}");
+                        StateHasChanged();
+                    });
+                }
+            };
+
+            finalResult = await Engine.ExecuteBundleAsync(selectedBundle, baseContext, 
+                line => {
+                    _ = InvokeAsync(() => {
+                        logs.Add($"[{DateTime.Now:HH:mm:ss}] {line}");
+                        StateHasChanged();
+                    });
+                });
+        }
+        catch (Exception ex)
+        {
+            logs.Add($"[FATAL] {ex.Message}");
+        }
+        finally { isRunning = false; }
+    }
+
+    private async Task ConfirmDeleteAsync(BusinessRuleBundle bundle)
+    {
+        var confirm = await DialogService.Confirm("Delete this bundle?", "Confirm Delete");
+        if (confirm == true)
+        {
+            await DbService.DeleteBusinessRuleBundleAsync(bundle.Id);
+            selectedBundle = null;
+            await LoadBundlesAsync();
+        }
+    }
+}
