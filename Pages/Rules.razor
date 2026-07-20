@@ -56,14 +56,19 @@
                 </div>
             </div>
             <div style="flex-grow: 1; padding: 1rem; overflow-y: auto;">
-                 <RadzenRow Gap="1rem">
-                    <RadzenColumn Size="6">
+                <RadzenRow Gap="1rem">
+                    <RadzenColumn Size="4">
                         <RadzenText TextStyle="TextStyle.Subtitle2">Rule Name</RadzenText>
                         <RadzenTextBox @bind-Value="selectedRule.Name" Style="width: 100%;" />
                     </RadzenColumn>
-                    <RadzenColumn Size="6">
+                    <RadzenColumn Size="4">
                         <RadzenText TextStyle="TextStyle.Subtitle2">Type</RadzenText>
                         <RadzenDropDown @bind-Value="selectedRule.RuleType" Data="@ruleTypes" Style="width: 100%;" />
+                    </RadzenColumn>
+                    <RadzenColumn Size="4">
+                        <RadzenText TextStyle="TextStyle.Subtitle2">Connection</RadzenText>
+                        <RadzenDropDown @bind-Value="selectedRule.ConnectionId" Data="@dbConnections" 
+                                        TextProperty="Name" ValueProperty="Id" AllowClear="true" Placeholder="None" Style="width: 100%;" />
                     </RadzenColumn>
                 </RadzenRow>
                 <div style="margin-top: 1rem; height: 400px; display: flex; flex-direction: column;">
@@ -79,6 +84,7 @@
     private List<BusinessRule> rules = new();
     private BusinessRule? selectedRule;
     private List<RuleType> ruleTypes = Enum.GetValues<RuleType>().ToList();
+    private List<DbConnectionDefinition> dbConnections = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -88,6 +94,7 @@
     private async Task LoadRulesAsync()
     {
         rules = (await DbService.GetBusinessRulesAsync()).ToList();
+        dbConnections = (await DbService.GetAllDbConnectionsAsync()).ToList();
     }
 
     private void SelectRule(BusinessRule rule)
