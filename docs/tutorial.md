@@ -86,7 +86,7 @@ How these fit together:
 - `SqlDatabaseService` stores and retrieves rules/bundles/connections from SQL Server.
 - `IBusinessRuleStore` resolves to `SqlDatabaseService`, so the engine can query rule metadata.
 - `IRuleDbProvider` resolves provider-specific DB connections (`SqlServerRuleDbProvider`).
-- `ISqlRuleExecutor` resolves to `DapperSqlRuleExecutor` from **RulesEngine.Dapper**.
+- `ISqlRuleExecutor` resolves to `DapperSqlRuleExecutor` from **EtlAnalytics.RulesEngine.Dapper**.
 - `BusinessRuleEngine<BusinessRuleContext>` uses all of the above to run TSQL and C# rules.
 
 > In production, replace `NoEncryptionService` with `AesEncryptionService` and configure `Security:EncryptionKey` or `DB_ENCRYPTION_KEY`.
