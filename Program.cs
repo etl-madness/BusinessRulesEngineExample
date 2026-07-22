@@ -30,6 +30,7 @@ builder.Services.AddSingleton<IEncryptionService, NoEncryptionService>();
 builder.Services.AddScoped<SqlDatabaseService>();
 builder.Services.AddScoped<IBusinessRuleStore>(sp => sp.GetRequiredService<SqlDatabaseService>());
 builder.Services.AddScoped<IRuleDbProvider, SqlServerRuleDbProvider>();
+builder.Services.AddScoped<ISqlRuleExecutor, DapperSqlRuleExecutor>();
 builder.Services.AddScoped<BusinessRuleEngine<BusinessRuleContext>>();
 
 var app = builder.Build();

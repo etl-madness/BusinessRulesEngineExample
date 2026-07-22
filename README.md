@@ -10,6 +10,9 @@ This demo includes a Rules Editor, Rule Bundles Editor, Connection Editor, and A
 ![DB Connections](images/DB_Connections.png)
 ![Swagger](images/Swagger.png)
 
+[Rules Engine README](https://github.com/etl-madness/EtlAnalytics.RulesEngine/blob/main/EtlAnalytics.RulesEngine/README.md)
+
+[Tutorial](docs/tutorial.md)
 ## Database Schema
 
 The following TSQL script sets up the necessary tables for both the Rules Engine infrastructure and the KVE/CVE reporting data.
