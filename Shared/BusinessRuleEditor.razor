@@ -1,5 +1,6 @@
 @using BusinessRulesEngineExample.Models
 @using BusinessRulesEngineExample.Services
+@using EtlAnalytics.RulesEngine.Models
 @inject DialogService DialogService
 @inject SqlDatabaseService DbService
 
@@ -50,7 +51,7 @@
 @code {
     [Parameter] public BusinessRule Rule { get; set; } = new();
     private bool isSaving;
-    private List<RuleType> ruleTypes = Enum.GetValues<RuleType>().ToList();
+    private List<string> ruleTypes = new() { "TSQL", "CSharp" };
     private List<DbConnectionDefinition> connections = new();
 
     protected override async Task OnInitializedAsync()

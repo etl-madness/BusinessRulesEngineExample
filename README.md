@@ -1,6 +1,6 @@
 # BusinessRulesEngineExample
 
-A Blazor Server application demonstrating the usage of `NuGet` `EtlAnalytics.RulesEngine.1.0.0.2` for managing and executing TSQL and C# business rules, specifically refactored for KVE (Known Vulnerability Exploitation) reporting.
+A Blazor Server application demonstrating the usage of `NuGet` `EtlAnalytics.RulesEngine.2.0.1` for managing and executing TSQL and C# business rules, specifically refactored for KVE (Known Vulnerability Exploitation) reporting.
 This demo includes a Rules Editor, Rule Bundles Editor, Connection Editor, and API. Optionally you can add the example simple KVE/CVE reporting data schema.
 
 ![Home](images/Home.png)
@@ -162,11 +162,11 @@ VALUES (
     'Analyze Campaign Impact', 
     'Logs the impact of found KVEs', 
     'CSharp', 
-    'Log("Starting Impact Analysis...");
+    'globals.Log("Starting Impact Analysis...");
 // PreviousResult from a TSQL rule is an IEnumerable<dynamic>
-var kveReports = PreviousResult as IEnumerable<dynamic>;
+var kveReports = globals.PreviousResult as IEnumerable<dynamic>;
 if (kveReports == null) {
-    Log("No reports found from previous step.");
+    globals.Log("No reports found from previous step.");
     return new { CriticalCount = 0, Violations = new List<dynamic>() };
 }
 return new {

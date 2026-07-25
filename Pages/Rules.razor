@@ -30,7 +30,7 @@
                             border: 1px solid @(selectedRule?.Id == rule.Id ? "#bfdbfe" : "transparent");">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                         <span style="font-weight: 600; color: #1e293b; font-size: 0.9rem;">@rule.Name</span>
-                        <RadzenBadge BadgeStyle="@(rule.RuleType == RuleType.TSQL ? BadgeStyle.Info : BadgeStyle.Warning)" Text="@rule.RuleType.ToString()" />
+                        <RadzenBadge BadgeStyle="@(rule.RuleType == "TSQL" ? BadgeStyle.Info : BadgeStyle.Warning)" Text="@rule.RuleType" />
                     </div>
                 </div>
             }
@@ -83,7 +83,8 @@
 @code {
     private List<BusinessRule> rules = new();
     private BusinessRule? selectedRule;
-    private List<RuleType> ruleTypes = Enum.GetValues<RuleType>().ToList();
+    private List<string> ruleTypes = new() { "TSQL", "CSharp" };
+
     private List<DbConnectionDefinition> dbConnections = new();
 
     protected override async Task OnInitializedAsync()
@@ -104,7 +105,7 @@
 
     private void CreateNewRule()
     {
-        selectedRule = new BusinessRule { Name = "New Rule", RuleType = RuleType.TSQL, Code = "" };
+        selectedRule = new BusinessRule { Name = "New Rule", RuleType = "TSQL", Code = "" };
     }
 
     private async Task SaveCurrentRule()
