@@ -8,7 +8,7 @@ This demo includes a Rules Editor, Rule Bundles Editor, Connection Editor, and A
 ![Rules TSQL Execute](images/Rules_SQL_Execute.png)
 ![Bundle Execution](images/BundleExecution.png)
 ![DB Connections](images/DB_Connections.png)
-![Visualizer Bundle](images/Visualizer.png)
+![Visualizer Bundle](images/Diagram_Bundle.png)
 ![Visualizer Individual](images/Visualizer_Individual.png)
 ![Swagger](images/Swagger.png)
 
