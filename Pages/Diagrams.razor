@@ -1,0 +1,237 @@
+@page "/diagrams"
+@using BusinessRulesEngineExample.Models
+@using BusinessRulesEngineExample.Services
+@using EtlAnalytics.RulesEngine.Models
+@inject SqlDatabaseService DbService
+@inject DiagramService DiagramService
+@inject NotificationService NotificationService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Rule & Bundle Diagrams</PageTitle>
+
+<RadzenStack Gap="1.5rem" Style="padding: 1rem;">
+    <!-- Page Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; padding: 1.25rem 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div>
+            <RadzenText TextStyle="TextStyle.H5" Style="margin: 0; font-weight: 800; color: #0f172a;">
+                📊 Rule & Bundle Architecture Visualizer
+            </RadzenText>
+            <RadzenText TextStyle="TextStyle.Caption" Style="color: #64748b; font-size: 0.85rem;">
+                Select any individual rule or bundle workflow to generate a live, interactive Mermaid.js diagram.
+            </RadzenText>
+        </div>
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <RadzenSelectBar TValue="string" Value="@selectedType" Change="@OnTypeChanged" Size="ButtonSize.Small" Style="font-weight: 700;">
+                <Items>
+                    <RadzenSelectBarItem Text="Individual Rules" Value="@("rules")" Icon="article" />
+                    <RadzenSelectBarItem Text="Bundle Workflows" Value="@("bundles")" Icon="account_tree" />
+                </Items>
+            </RadzenSelectBar>
+        </div>
+    </div>
+
+    <!-- Controls Row -->
+    <RadzenCard Style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+        <RadzenRow Gap="1rem" AlignItems="AlignItems.Center">
+            @if (selectedType == "rules")
+            {
+                <RadzenColumn Size="12" SizeMD="6">
+                    <RadzenText TextStyle="TextStyle.Subtitle2" Style="font-weight: 700; margin-bottom: 0.35rem;">Select Rule</RadzenText>
+                    <RadzenDropDown TValue="int?" Data="@allRules" TextProperty="Name" ValueProperty="Id" Value="@selectedRuleId" Change="@(args => SelectRule((int?)args))" Style="width: 100%; font-weight: 600;" Placeholder="Choose a rule to visualize..." />
+                </RadzenColumn>
+            }
+            else
+            {
+                <RadzenColumn Size="12" SizeMD="6">
+                    <RadzenText TextStyle="TextStyle.Subtitle2" Style="font-weight: 700; margin-bottom: 0.35rem;">Select Bundle Workflow</RadzenText>
+                    <RadzenDropDown TValue="int?" Data="@allBundles" TextProperty="Name" ValueProperty="Id" Value="@selectedBundleId" Change="@(args => SelectBundle((int?)args))" Style="width: 100%; font-weight: 600;" Placeholder="Choose a bundle workflow..." />
+                </RadzenColumn>
+            }
+
+            <RadzenColumn Size="12" SizeMD="6" Style="display: flex; justify-content: flex-end; gap: 0.5rem; align-items: flex-end;">
+                <RadzenButton Text="Refresh Diagram" Icon="refresh" ButtonStyle="ButtonStyle.Light" Click="RenderCurrentDiagramAsync" Size="ButtonSize.Small" />
+                <RadzenButton Text="Copy Mermaid Syntax" Icon="content_copy" ButtonStyle="ButtonStyle.Primary" Click="CopyMermaidSyntax" Size="ButtonSize.Small" Disabled="@string.IsNullOrEmpty(currentMermaidCode)" />
+            </RadzenColumn>
+        </RadzenRow>
+    </RadzenCard>
+
+    <!-- Main Content Grid -->
+    <RadzenRow Gap="1.5rem">
+        <!-- Diagram Render Canvas -->
+        <RadzenColumn Size="12" SizeLG="8">
+            <RadzenCard Style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 1.5rem; min-height: 480px; display: flex; flex-direction: column; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 0.75rem; margin-bottom: 1rem; border-bottom: 1px solid #f1f5f9;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <RadzenIcon Icon="schema" Style="color: #2563eb; font-size: 20px;" />
+                        <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 800; margin: 0; color: #0f172a;">
+                            Mermaid.js Flow Diagram
+                        </RadzenText>
+                    </div>
+                    <span style="font-size: 0.75rem; background: #eff6ff; color: #1d4ed8; padding: 0.2rem 0.6rem; border-radius: 12px; font-weight: 700; border: 1px solid #bfdbfe;">
+                        Auto-Generated
+                    </span>
+                </div>
+
+                <div id="mermaid-canvas" style="flex-grow: 1; display: flex; align-items: center; justify-content: center; min-height: 380px; overflow: auto; padding: 1rem; background: #fafafa; border-radius: 6px; border: 1px dashed #e2e8f0;">
+                    <span style="color: #94a3b8; font-style: italic;">Select a rule or bundle above to render diagram...</span>
+                </div>
+            </RadzenCard>
+        </RadzenColumn>
+
+        <!-- Inspector & Code Panel -->
+        <RadzenColumn Size="12" SizeLG="4">
+            <RadzenCard Style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem;">
+                <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 800; margin-bottom: 1rem; color: #0f172a;">
+                    Properties & Metadata
+                </RadzenText>
+
+                @if (selectedType == "rules" && currentRule != null)
+                {
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.85rem;">
+                        <div>
+                            <span style="color: #64748b; display: block; font-weight: 600;">Rule Name:</span>
+                            <strong style="color: #0f172a; font-size: 0.95rem;">@currentRule.Name</strong>
+                        </div>
+                        <div>
+                            <span style="color: #64748b; display: block; font-weight: 600;">Execution Type:</span>
+                            <span style="display: inline-block; padding: 0.2rem 0.6rem; border-radius: 4px; font-weight: 700; background: @(currentRule.RuleType.ToString() == "TSQL" ? "#dbeafe" : "#dcfce7"); color: @(currentRule.RuleType.ToString() == "TSQL" ? "#1e40af" : "#166534");">
+                                @currentRule.RuleType
+                            </span>
+                        </div>
+                        <div>
+                            <span style="color: #64748b; display: block; font-weight: 600;">Target Connection:</span>
+                            <span style="color: #334155; font-weight: 600;">@(currentConnection?.Name ?? (currentRule.ConnectionId.HasValue ? $"Connection #{currentRule.ConnectionId}" : "Default Connection"))</span>
+                        </div>
+                        <div>
+                            <span style="color: #64748b; display: block; font-weight: 600;">Code Preview:</span>
+                            <pre style="background: #0f172a; color: #38bdf8; padding: 0.75rem; border-radius: 6px; font-size: 0.75rem; max-height: 140px; overflow-y: auto; white-space: pre-wrap; margin-top: 0.25rem;">@currentRule.Code</pre>
+                        </div>
+                    </div>
+                }
+                else if (selectedType == "bundles" && currentBundle != null)
+                {
+                    var stageCount = currentBundle.Items?.Select(i => i.SequenceOrder).Distinct().Count() ?? 0;
+                    var parallelCount = currentBundle.Items?.GroupBy(i => i.SequenceOrder).Count(g => g.Count() > 1) ?? 0;
+
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.85rem;">
+                        <div>
+                            <span style="color: #64748b; display: block; font-weight: 600;">Bundle Name:</span>
+                            <strong style="color: #0f172a; font-size: 0.95rem;">@currentBundle.Name</strong>
+                        </div>
+                        <div style="display: flex; gap: 1rem;">
+                            <div>
+                                <span style="color: #64748b; display: block; font-weight: 600;">Sequential Stages:</span>
+                                <span style="font-weight: 700; color: #0f172a;">@stageCount</span>
+                            </div>
+                            <div>
+                                <span style="color: #64748b; display: block; font-weight: 600;">Parallel Groups:</span>
+                                <span style="font-weight: 800; color: #d97706;">⚡ @parallelCount</span>
+                            </div>
+                            <div>
+                                <span style="color: #64748b; display: block; font-weight: 600;">Total Rules:</span>
+                                <span style="font-weight: 700; color: #0f172a;">@(currentBundle.Items?.Count ?? 0)</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div style="color: #94a3b8; font-style: italic; font-size: 0.85rem;">No metadata available</div>
+                }
+
+                <hr style="margin: 1.25rem 0; border-color: #e2e8f0;" />
+
+                <!-- Raw Mermaid Source -->
+                <RadzenText TextStyle="TextStyle.Subtitle2" Style="font-weight: 700; margin-bottom: 0.5rem;">
+                    Raw Mermaid.js Syntax
+                </RadzenText>
+                <textarea readonly style="width: 100%; height: 160px; font-family: Consolas, monospace; font-size: 0.75rem; background: #0b1220; color: #a5f3fc; border: 1px solid #1e293b; border-radius: 6px; padding: 0.75rem; resize: none;" value="@currentMermaidCode"></textarea>
+            </RadzenCard>
+        </RadzenColumn>
+    </RadzenRow>
+</RadzenStack>
+
+@code {
+    private string selectedType = "rules";
+    private List<BusinessRule> allRules = new();
+    private List<BusinessRuleBundle> allBundles = new();
+    private List<DbConnectionDefinition> allConnections = new();
+
+    private int? selectedRuleId;
+    private int? selectedBundleId;
+
+    private BusinessRule? currentRule;
+    private DbConnectionDefinition? currentConnection;
+    private BusinessRuleBundle? currentBundle;
+
+    private string currentMermaidCode = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        allRules = (await DbService.GetBusinessRulesAsync()).ToList();
+        allBundles = (await DbService.GetBusinessRuleBundlesAsync()).ToList();
+        allConnections = (await DbService.GetAllDbConnectionsAsync()).ToList();
+
+        if (allRules.Any())
+        {
+            await SelectRule(allRules.First().Id);
+        }
+    }
+
+    private async Task OnTypeChanged(string value)
+    {
+        selectedType = value;
+        if (selectedType == "rules" && allRules.Any())
+        {
+            await SelectRule(selectedRuleId ?? allRules.First().Id);
+        }
+        else if (selectedType == "bundles" && allBundles.Any())
+        {
+            await SelectBundle(selectedBundleId ?? allBundles.First().Id);
+        }
+    }
+
+    private async Task SelectRule(int? ruleId)
+    {
+        selectedRuleId = ruleId;
+        if (!selectedRuleId.HasValue) return;
+
+        currentRule = allRules.FirstOrDefault(r => r.Id == selectedRuleId.Value);
+        if (currentRule != null)
+        {
+            currentConnection = allConnections.FirstOrDefault(c => c.Id == currentRule.ConnectionId);
+            currentMermaidCode = DiagramService.GenerateRuleMermaid(currentRule, currentConnection);
+            await RenderCurrentDiagramAsync();
+        }
+    }
+
+    private async Task SelectBundle(int? bundleId)
+    {
+        selectedBundleId = bundleId;
+        if (!selectedBundleId.HasValue) return;
+
+        currentBundle = await DbService.GetBusinessRuleBundleByIdAsync(selectedBundleId.Value);
+        if (currentBundle != null)
+        {
+            currentMermaidCode = DiagramService.GenerateBundleMermaid(currentBundle, allRules);
+            await RenderCurrentDiagramAsync();
+        }
+    }
+
+    private async Task RenderCurrentDiagramAsync()
+    {
+        if (!string.IsNullOrEmpty(currentMermaidCode))
+        {
+            await JSRuntime.InvokeVoidAsync("renderMermaidDiagram", "mermaid-canvas", currentMermaidCode);
+        }
+    }
+
+    private async Task CopyMermaidSyntax()
+    {
+        if (!string.IsNullOrEmpty(currentMermaidCode))
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", currentMermaidCode);
+            NotificationService.Notify(NotificationSeverity.Success, "Copied", "Mermaid.js syntax copied to clipboard.");
+        }
+    }
+}

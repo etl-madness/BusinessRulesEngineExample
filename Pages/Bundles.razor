@@ -1,0 +1,492 @@
+@page "/bundles"
+@using BusinessRulesEngineExample.Models
+@using BusinessRulesEngineExample.Services
+@using EtlAnalytics.RulesEngine.Models
+@using System.Text.Json
+@using System.Text.Encodings.Web
+@inject SqlDatabaseService DbService
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+@inject BusinessRuleEngine<BusinessRuleContext> Engine
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Rule Bundles</PageTitle>
+
+<div style="display: flex; height: calc(100vh - 120px); border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; overflow: hidden;">
+    <style>
+        @@keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+
+    <!-- Sidebar -->
+    <div style="width: 300px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; background: #f8fafc;">
+        <div style="padding: 1rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #ffffff;">
+            <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 700; margin: 0; color: #0f172a;">Bundles</RadzenText>
+            <div style="display: flex; gap: 0.5rem;">
+                <RadzenButton Icon="refresh" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="LoadBundlesAsync" Tooltip="Refresh Bundles" Disabled="@isRunning" />
+                <RadzenButton Icon="add" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small" Click="CreateNewBundle" Tooltip="New Bundle" Disabled="@isRunning" />
+            </div>
+        </div>
+        <div style="flex-grow: 1; overflow-y: auto; padding: 0.5rem;">
+            @foreach (var bundle in bundles)
+            {
+                var stageCount = bundle.Items?.Select(i => i.SequenceOrder).Distinct().Count() ?? 0;
+                var parallelStageCount = bundle.Items?.GroupBy(i => i.SequenceOrder).Count(g => g.Count() > 1) ?? 0;
+
+                <div @onclick="() => SelectBundle(bundle.Id)" 
+                     style="padding: 0.75rem 1rem; margin-bottom: 0.35rem; border-radius: 6px; cursor: pointer; transition: all 0.2s; 
+                            background: @(selectedBundle?.Id == bundle.Id ? "#eff6ff" : "#ffffff");
+                            border: 1px solid @(selectedBundle?.Id == bundle.Id ? "#3b82f6" : "#e2e8f0"); box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+                    <div style="font-weight: 700; color: #0f172a; font-size: 0.9rem;">@bundle.Name</div>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.35rem; font-size: 0.75rem; color: #64748b; align-items: center;">
+                        <span>@stageCount Stages</span>
+                        <span>•</span>
+                        <span>@(bundle.Items?.Count ?? 0) Rules</span>
+                        @if (parallelStageCount > 0)
+                        {
+                            <span style="background: #fef3c7; color: #92400e; font-weight: 700; padding: 0 0.35rem; border-radius: 4px; font-size: 0.7rem; border: 1px solid #fcd34d;">
+                                ⚡ @parallelStageCount Parallel
+                            </span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div style="flex-grow: 1; display: flex; flex-direction: column; background: #ffffff;">
+        @if (selectedBundle == null)
+        {
+            <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #94a3b8;">
+                <RadzenIcon Icon="account_tree" Style="font-size: 48px; color: #cbd5e1; margin-bottom: 1rem;" />
+                <RadzenText TextStyle="TextStyle.H6" Style="color: #64748b;">Select a bundle to edit or create a new parallel workflow</RadzenText>
+            </div>
+        }
+        else
+        {
+            <div style="padding: 1rem 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc;">
+                <div>
+                    <RadzenText TextStyle="TextStyle.H6" Style="margin: 0; font-weight: 700;">@selectedBundle.Name</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" Style="color: #64748b;">Configure sequential stages and parallel rule execution groups</RadzenText>
+                </div>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <RadzenButton Text="@(isRunning ? "Executing..." : "Run Bundle")" Icon="@(isRunning ? "autorenew" : "play_arrow")" ButtonStyle="ButtonStyle.Success" Click="RunBundle" IsBusy="@isRunning" Disabled="@isRunning" Style="font-weight: 600;" />
+                    <RadzenButton Text="Save Bundle" Icon="save" ButtonStyle="ButtonStyle.Primary" Click="SaveCurrentBundle" Disabled="@isRunning" />
+                    <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Click="() => ConfirmDeleteAsync(selectedBundle)" Tooltip="Delete Bundle" Disabled="@isRunning" />
+                </div>
+            </div>
+
+            <div style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
+                <div style="flex-grow: 1; padding: 1.5rem; overflow-y: auto;">
+                    
+                    @if (isRunning)
+                    {
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.25rem; background: #eff6ff; border: 1px solid #60a5fa; border-radius: 8px; margin-bottom: 1.25rem; color: #1e40af; box-shadow: 0 2px 4px rgba(59,130,246,0.1);">
+                            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                <RadzenIcon Icon="autorenew" Style="animation: spin 1s linear infinite; font-size: 24px; color: #2563eb;" />
+                                <div>
+                                    <div style="font-weight: 800; font-size: 0.9rem;">Executing Parallel Rule Bundle...</div>
+                                    <div style="font-size: 0.75rem; color: #3b82f6;">Running stages and aggregating parallel outputs...</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Bundle Settings & Info Banner -->
+                    <RadzenRow Gap="1rem" Style="margin-bottom: 1.5rem;">
+                        <RadzenColumn Size="12" SizeMD="6">
+                            <RadzenText TextStyle="TextStyle.Subtitle2" Style="font-weight: 700;">Bundle Name</RadzenText>
+                            <RadzenTextBox @bind-Value="selectedBundle.Name" Style="width: 100%; font-weight: 600;" Disabled="@isRunning" />
+                        </RadzenColumn>
+                        <RadzenColumn Size="12" SizeMD="6">
+                            <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 0.75rem 1rem; font-size: 0.8rem; color: #0369a1;">
+                                <strong>💡 Parallel Execution Guide:</strong> Rules placed within the <em>same Stage</em> run concurrently via <code>Task.WhenAll</code>. Use <strong>⚡ Add Parallel Stage</strong> or <strong>+ Add Parallel Rule</strong> to execute rules simultaneously.
+                            </div>
+                        </RadzenColumn>
+                    </RadzenRow>
+
+                    <!-- Workflow Stage Builder Header -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; padding-bottom: 0.5rem; border-bottom: 2px solid #f1f5f9;">
+                        <div>
+                            <RadzenText TextStyle="TextStyle.Subtitle1" Style="margin: 0; font-weight: 800; color: #0f172a;">
+                                Workflow Execution Diagram
+                            </RadzenText>
+                            <RadzenText TextStyle="TextStyle.Caption" Style="color: #64748b;">
+                                Stages run sequentially top-to-bottom. Rules inside a stage execute in parallel side-by-side.
+                            </RadzenText>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <RadzenButton Text="Add Sequential Stage" Icon="add" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="AddNewStage" Disabled="@isRunning" />
+                            <RadzenButton Text="⚡ Add Parallel Stage" Icon="bolt" ButtonStyle="ButtonStyle.Warning" Size="ButtonSize.Small" Click="AddParallelStage" Tooltip="Create a stage with multiple rules running in parallel" Style="font-weight: 700;" Disabled="@isRunning" />
+                        </div>
+                    </div>
+
+                    @if (!GetStageGroups().Any())
+                    {
+                        <div style="padding: 3rem 2rem; border: 2px dashed #cbd5e1; border-radius: 12px; text-align: center; background: #f8fafc;">
+                            <RadzenIcon Icon="schema" Style="font-size: 40px; color: #94a3b8; margin-bottom: 0.5rem;" />
+                            <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 700; color: #334155; margin-bottom: 0.25rem;">No stages in this bundle</RadzenText>
+                            <RadzenText TextStyle="TextStyle.Body2" Style="color: #64748b; margin-bottom: 1.25rem;">Start building your workflow by adding sequential or parallel stages.</RadzenText>
+                            <div style="display: flex; gap: 0.75rem; justify-content: center;">
+                                <RadzenButton Text="Add Sequential Stage" Icon="add" ButtonStyle="ButtonStyle.Secondary" Click="AddNewStage" Disabled="@isRunning" />
+                                <RadzenButton Text="⚡ Add Parallel Stage" Icon="bolt" ButtonStyle="ButtonStyle.Warning" Click="AddParallelStage" Disabled="@isRunning" />
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Stages List -->
+                    <div style="display: flex; flex-direction: column; gap: 0;">
+                        @{
+                            var stageList = GetStageGroups().ToList();
+                        }
+                        @for (int idx = 0; idx < stageList.Count; idx++)
+                        {
+                            var stage = stageList[idx];
+                            var stageOrder = stage.Key;
+                            var stageItems = stage.ToList();
+                            var isParallel = stageItems.Count > 1;
+
+                            <!-- Stage Card -->
+                            <div style="border: 2px solid @(isParallel ? "#f59e0b" : "#cbd5e1"); border-radius: 10px; background: @(isParallel ? "#fffbeb" : "#ffffff"); padding: 1.25rem; box-shadow: 0 2px 4px rgba(0,0,0,0.04); position: relative;">
+                                
+                                <!-- Stage Header -->
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid @(isParallel ? "#fcd34d" : "#e2e8f0");">
+                                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                        <div style="background: @(isParallel ? "#d97706" : "#475569"); color: #ffffff; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.85rem;">
+                                            @stageOrder
+                                        </div>
+                                        <RadzenText TextStyle="TextStyle.Subtitle1" Style="font-weight: 800; margin: 0; color: #0f172a;">
+                                            Stage @stageOrder
+                                        </RadzenText>
+
+                                        @if (isParallel)
+                                        {
+                                            <span style="display: inline-flex; align-items: center; gap: 0.35rem; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; padding: 0.25rem 0.65rem; border-radius: 20px; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.02em;">
+                                                ⚡ PARALLEL GROUP (Task.WhenAll — @stageItems.Count Concurrent Rules)
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span style="display: inline-flex; align-items: center; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; padding: 0.25rem 0.65rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600;">
+                                                Sequential Step
+                                            </span>
+                                        }
+                                    </div>
+
+                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                        <RadzenButton Text="+ Add Parallel Rule" Icon="add_circle" ButtonStyle="ButtonStyle.Warning" Size="ButtonSize.Small" Click="() => AddRuleToStage(stageOrder)" Tooltip="Add another rule to run simultaneously in this stage" Style="font-weight: 700;" Disabled="@isRunning" />
+                                        <RadzenButton Icon="delete_forever" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="() => RemoveStage(stageOrder)" Tooltip="Delete entire stage" Disabled="@isRunning" />
+                                    </div>
+                                </div>
+
+                                <!-- Stage Rules Layout: Grid for parallel side-by-side visualization -->
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem;">
+                                    @foreach (var item in stageItems)
+                                    {
+                                        var selectedRule = allRules.FirstOrDefault(r => r.Id == item.RuleId);
+
+                                        <div style="border: 1px solid @(isParallel ? "#fcd34d" : "#e2e8f0"); border-radius: 8px; background: #ffffff; padding: 0.85rem 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 0.5rem; position: relative;">
+                                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                <div style="font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">
+                                                    @(isParallel ? "⚡ Parallel Worker" : "Rule Assignment")
+                                                </div>
+                                                <RadzenButton Icon="close" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.ExtraSmall" Click="() => RemoveItem(item)" Tooltip="Remove this rule from stage" Disabled="@isRunning" />
+                                            </div>
+
+                                            <RadzenDropDown TValue="int" Data="@allRules" TextProperty="Name" ValueProperty="Id" @bind-Value="item.RuleId" Style="width: 100%; font-weight: 600;" Disabled="@isRunning" />
+
+                                            @if (selectedRule != null)
+                                            {
+                                                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.25rem;">
+                                                    <span style="font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 700; 
+                                                                 background: @(selectedRule.RuleType.ToString() == "TSQL" ? "#dbeafe" : "#dcfce7"); 
+                                                                 color: @(selectedRule.RuleType.ToString() == "TSQL" ? "#1e40af" : "#166534");">
+                                                        @selectedRule.RuleType Query/Script
+                                                    </span>
+                                                    <span style="font-size: 0.75rem; color: #64748b;">
+                                                        ID: @selectedRule.Id
+                                                    </span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+
+                            </div>
+
+                            <!-- Sequential Flow Arrow Connector between Stages -->
+                            @if (idx < stageList.Count - 1)
+                            {
+                                <div style="display: flex; flex-direction: column; align-items: center; margin: 0.5rem 0;">
+                                    <div style="width: 2px; height: 16px; background: #94a3b8;"></div>
+                                    <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 12px; padding: 0.15rem 0.65rem; font-size: 0.7rem; font-weight: 700; color: #475569; display: flex; align-items: center; gap: 0.25rem;">
+                                        <RadzenIcon Icon="arrow_downward" Style="font-size: 14px;" /> Executes Next (Aggregates Previous Stage Outputs)
+                                    </div>
+                                    <div style="width: 2px; height: 16px; background: #94a3b8;"></div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+
+                <!-- Adjustable Watch Panel & Log Output -->
+                <div style="height: @(terminalHeight)px; min-height: 150px; max-height: calc(100vh - 180px); border-top: 2px solid #0f172a; background: #0b1220; color: #e2e8f0; display: flex; flex-direction: column; resize: vertical; overflow: auto; position: relative; transition: height 0.1s ease;">
+                    <div style="padding: 0.5rem 1rem; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; background: #0f172a; position: sticky; top: 0; z-index: 10;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <RadzenIcon Icon="terminal" Style="color: #38bdf8; font-size: 18px;" />
+                            <RadzenText TextStyle="TextStyle.Caption" Style="color: #f8fafc; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin: 0;">
+                                Parallel Execution Watch & Live Engine Logs
+                            </RadzenText>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            @if (isRunning)
+                            {
+                                <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 700; display: flex; align-items: center; gap: 0.35rem; margin-right: 0.5rem;">
+                                    <RadzenIcon Icon="sync" Style="animation: spin 1s linear infinite; font-size: 16px;" /> Executing parallel stages...
+                                </span>
+                            }
+                            <span style="font-size: 0.7rem; color: #64748b; font-weight: 600; margin-right: 0.2rem;">Height:</span>
+                            <RadzenButton Text="180px" Size="ButtonSize.ExtraSmall" ButtonStyle="@(terminalHeight == 180 ? ButtonStyle.Primary : ButtonStyle.Light)" Click="() => terminalHeight = 180" Variant="Variant.Flat" Tooltip="Compact Terminal" />
+                            <RadzenButton Text="350px" Size="ButtonSize.ExtraSmall" ButtonStyle="@(terminalHeight == 350 ? ButtonStyle.Primary : ButtonStyle.Light)" Click="() => terminalHeight = 350" Variant="Variant.Flat" Tooltip="Medium Terminal" />
+                            <RadzenButton Text="550px" Size="ButtonSize.ExtraSmall" ButtonStyle="@(terminalHeight == 550 ? ButtonStyle.Primary : ButtonStyle.Light)" Click="() => terminalHeight = 550" Variant="Variant.Flat" Tooltip="Expanded Terminal" />
+                            <RadzenButton Icon="@(isTerminalMaximized ? "fullscreen_exit" : "fullscreen")" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Light" Click="ToggleMaximizeTerminal" Tooltip="Toggle Maximize Terminal" Variant="Variant.Text" />
+                            <RadzenButton Icon="clear_all" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.ExtraSmall" Click="() => logs.Clear()" Variant="Variant.Text" Tooltip="Clear logs" />
+                        </div>
+                    </div>
+                    <div style="flex-grow: 1; display: flex; overflow: hidden;">
+                        <div id="bundle-ide-log" style="flex: 1; padding: 0.75rem; overflow-y: auto; font-family: Consolas, monospace; font-size: 0.8rem; border-right: 1px solid #1e293b;">
+                            @if (!logs.Any() && !isRunning)
+                            {
+                                <span style="color: #64748b; font-style: italic;">Click 'Run Bundle' to execute workflow stages and observe parallel execution logs...</span>
+                            }
+                            @foreach (var log in logs)
+                            {
+                                <div style="margin-bottom: 0.15rem; color: @(log.Contains("[FATAL]") ? "#f87171" : log.Contains("Executing parallel group") ? "#fbbf24" : "#e2e8f0");">
+                                    @log
+                                </div>
+                            }
+                        </div>
+                        <div style="width: 400px; padding: 0.75rem; overflow-y: auto; background: #020617;">
+                            <RadzenText TextStyle="TextStyle.Caption" Style="color: #94a3b8; font-weight: 700; margin-bottom: 0.5rem; display: block;">
+                                Final Output / Stage Result Preview
+                            </RadzenText>
+                            @if (finalResult != null)
+                            {
+                                <pre style="font-size: 0.75rem; color: #38bdf8; margin: 0; white-space: pre-wrap;">@FormatResultPreview(finalResult)</pre>
+                            }
+                            else if (isRunning)
+                            {
+                                <span style="color: #38bdf8; font-size: 0.75rem; font-style: italic; display: flex; align-items: center; gap: 0.35rem;">
+                                    <RadzenIcon Icon="sync" Style="animation: spin 1s linear infinite; font-size: 14px;" /> Processing stage outputs...
+                                </span>
+                            }
+                            else
+                            {
+                                <span style="color: #475569; font-size: 0.75rem; font-style: italic;">No execution result yet</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<BusinessRuleBundle> bundles = new();
+    private List<BusinessRule> allRules = new();
+    private BusinessRuleBundle? selectedBundle;
+    private List<string> logs = new();
+    private object? finalResult;
+    private bool isRunning;
+    private int terminalHeight = 300;
+    private bool isTerminalMaximized = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBundlesAsync();
+        allRules = (await DbService.GetBusinessRulesAsync()).ToList();
+    }
+
+    private async Task LoadBundlesAsync()
+    {
+        bundles = (await DbService.GetBusinessRuleBundlesAsync()).ToList();
+    }
+
+    private void ToggleMaximizeTerminal()
+    {
+        isTerminalMaximized = !isTerminalMaximized;
+        terminalHeight = isTerminalMaximized ? 550 : 300;
+    }
+
+    private async Task SelectBundle(int id)
+    {
+        selectedBundle = await DbService.GetBusinessRuleBundleByIdAsync(id);
+        finalResult = null;
+        logs.Clear();
+    }
+
+    private void CreateNewBundle()
+    {
+        selectedBundle = new BusinessRuleBundle { Name = "New Parallel Bundle" };
+        finalResult = null;
+        logs.Clear();
+        AddParallelStage();
+    }
+
+    private IEnumerable<IGrouping<int, BusinessRuleBundleItem>> GetStageGroups()
+    {
+        if (selectedBundle?.Items == null) return Enumerable.Empty<IGrouping<int, BusinessRuleBundleItem>>();
+        return selectedBundle.Items.GroupBy(i => i.SequenceOrder).OrderBy(g => g.Key);
+    }
+
+    private void AddNewStage()
+    {
+        if (selectedBundle == null) return;
+        var nextStage = selectedBundle.Items.Any() ? selectedBundle.Items.Max(i => i.SequenceOrder) + 1 : 1;
+        var defaultRuleId = allRules.FirstOrDefault()?.Id ?? 0;
+        selectedBundle.Items.Add(new BusinessRuleBundleItem { SequenceOrder = nextStage, RuleId = defaultRuleId });
+    }
+
+    private void AddParallelStage()
+    {
+        if (selectedBundle == null) return;
+        var nextStage = selectedBundle.Items.Any() ? selectedBundle.Items.Max(i => i.SequenceOrder) + 1 : 1;
+        var rule1Id = allRules.FirstOrDefault()?.Id ?? 0;
+        var rule2Id = allRules.Skip(1).FirstOrDefault()?.Id ?? rule1Id;
+
+        selectedBundle.Items.Add(new BusinessRuleBundleItem { SequenceOrder = nextStage, RuleId = rule1Id });
+        selectedBundle.Items.Add(new BusinessRuleBundleItem { SequenceOrder = nextStage, RuleId = rule2Id });
+    }
+
+    private void AddRuleToStage(int sequenceOrder)
+    {
+        if (selectedBundle == null) return;
+        var defaultRuleId = allRules.FirstOrDefault()?.Id ?? 0;
+        selectedBundle.Items.Add(new BusinessRuleBundleItem { SequenceOrder = sequenceOrder, RuleId = defaultRuleId });
+    }
+
+    private void RemoveStage(int sequenceOrder)
+    {
+        if (selectedBundle == null) return;
+        selectedBundle.Items.RemoveAll(i => i.SequenceOrder == sequenceOrder);
+    }
+
+    private void RemoveItem(BusinessRuleBundleItem item)
+    {
+        selectedBundle?.Items.Remove(item);
+    }
+
+    private async Task SaveCurrentBundle()
+    {
+        if (selectedBundle == null) return;
+        if (selectedBundle.Id == 0)
+            await DbService.InsertBusinessRuleBundleAsync(selectedBundle);
+        else
+            await DbService.UpdateBusinessRuleBundleAsync(selectedBundle);
+        
+        await LoadBundlesAsync();
+        NotificationService.Notify(NotificationSeverity.Success, "Saved", "Bundle saved successfully.");
+    }
+
+    private async Task RunBundle()
+    {
+        if (selectedBundle == null || !selectedBundle.Items.Any()) return;
+
+        isRunning = true;
+        finalResult = null;
+        logs.Clear();
+        StateHasChanged();
+
+        try
+        {
+            var baseContext = new BusinessRuleContext
+            {
+                Log = line => {
+                    var entry = $"[{DateTime.Now:HH:mm:ss}] {line}";
+                    _ = InvokeAsync(() => {
+                        logs.Add(entry);
+                        if (logs.Count > 200) logs.RemoveAt(0);
+                        StateHasChanged();
+                    });
+                }
+            };
+
+            var bundleToRun = selectedBundle;
+            finalResult = await Task.Run(() => Engine.ExecuteBundleAsync(bundleToRun, baseContext, 
+                line => {
+                    var entry = $"[{DateTime.Now:HH:mm:ss}] {line}";
+                    _ = InvokeAsync(() => {
+                        logs.Add(entry);
+                        if (logs.Count > 200) logs.RemoveAt(0);
+                        StateHasChanged();
+                    });
+                }));
+        }
+        catch (Exception ex)
+        {
+            logs.Add($"[FATAL] {ex.Message}");
+        }
+        finally 
+        { 
+            isRunning = false; 
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatResultPreview(object? result)
+    {
+        if (result == null) return "null";
+
+        try
+        {
+            if (result is System.Collections.IEnumerable enumerable && result is not string)
+            {
+                var list = enumerable.Cast<object?>().ToList();
+                int totalCount = list.Count;
+                if (totalCount > 50)
+                {
+                    var preview = list.Take(50);
+                    var json = JsonSerializer.Serialize(preview, new JsonSerializerOptions 
+                    { 
+                        WriteIndented = true, 
+                        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping 
+                    });
+                    return $"// Showing first 50 of {totalCount:N0} items returned\n{json}";
+                }
+                else
+                {
+                    return JsonSerializer.Serialize(list, new JsonSerializerOptions 
+                    { 
+                        WriteIndented = true, 
+                        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping 
+                    });
+                }
+            }
+
+            return JsonSerializer.Serialize(result, new JsonSerializerOptions 
+            { 
+                WriteIndented = true, 
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping 
+            });
+        }
+        catch (Exception ex)
+        {
+            return $"[Preview formatting error: {ex.Message}]";
+        }
+    }
+
+    private async Task ConfirmDeleteAsync(BusinessRuleBundle bundle)
+    {
+        var confirm = await DialogService.Confirm("Delete this bundle?", "Confirm Delete");
+        if (confirm == true)
+        {
+            await DbService.DeleteBusinessRuleBundleAsync(bundle.Id);
+            selectedBundle = null;
+            await LoadBundlesAsync();
+        }
+    }
+}
